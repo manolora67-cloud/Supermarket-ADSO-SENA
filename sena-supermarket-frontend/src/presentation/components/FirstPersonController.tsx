@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls } from '@react-three/drei';
 import * as THREE from 'three';
+import { isNearNPC } from '../../application/services/npcCollisionRegistry';
 
 // Cajas de colisión AABB ajustadas a las fachadas de cristal externas
 const BUILDING_BOXES = [
@@ -98,10 +99,10 @@ export const FirstPersonController: React.FC = () => {
     const nextX = camera.position.x + direction.x;
     const nextZ = camera.position.z + direction.z;
 
-    if (!isPositionBlocked(nextX, camera.position.z)) {
+    if (!isPositionBlocked(nextX, camera.position.z) && !isNearNPC(nextX, camera.position.z)) {
       camera.position.x = nextX;
     }
-    if (!isPositionBlocked(camera.position.x, nextZ)) {
+    if (!isPositionBlocked(camera.position.x, nextZ) && !isNearNPC(camera.position.x, nextZ)) {
       camera.position.z = nextZ;
     }
 

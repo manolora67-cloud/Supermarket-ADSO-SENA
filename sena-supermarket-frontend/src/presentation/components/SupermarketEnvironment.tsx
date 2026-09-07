@@ -2,7 +2,7 @@ import React, { Suspense } from 'react';
 import { useGLTF } from '@react-three/drei';
 import { CarTraffic } from './CarTraffic';
 import { SupermarketExpansions } from './SupermarketExpansions';
-import { PedestrianNPCs } from './PedestrianNPCs';
+import { NPCWorld } from './NPCWorld';
 
 const SUPERMARKET_CONFIG = {
   position: [-16, 0, 0] as [number, number, number],
@@ -169,7 +169,7 @@ export const SupermarketEnvironment: React.FC<SupermarketEnvironmentProps> = ({
       </group>
 
       <CarTraffic onPlayerHit={onPlayerHit} />
-      <PedestrianNPCs />
+      <NPCWorld />
       <SupermarketExpansions level={level} />
     </group>
   );
