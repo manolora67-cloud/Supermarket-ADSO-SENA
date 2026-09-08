@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useMemo, useRef } from 'react';
-import { useAnimations, useGLTF } from '@react-three/drei';
+import { useGLTF } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
@@ -60,20 +60,32 @@ function AnimatedNPC({ config }: { config: NPCConfig }) {
   const rootRef = useRef<THREE.Group>(null);
   const modelRef = useRef<THREE.Group>(null);
   const routeIndex = useRef(config.moves === false ? 0 : 1);
-  const { scene, animations } = useGLTF(config.model);
+  const { scene, animations: modelAnimations } = useGLTF(config.model);
+  const animationAsset = config.animationModel ? useGLTF(config.animationModel) : { scene, animations: modelAnimations };
   const clonedScene = useMemo(() => SkeletonUtils.clone(scene), [scene]);
-  const { actions } = useAnimations(config.moves === false ? animations : [], modelRef);
+  const mixer = useMemo(() => new THREE.AnimationMixer(clonedScene), [clonedScene]);
 
   useEffect(() => {
-    if (config.moves !== false) return;
-    const idleAction = Object.values(actions)[0];
-    idleAction?.reset().fadeIn(0.2).play();
-    return () => { idleAction?.fadeOut(0.2); };
-  }, [actions, config.moves]);
+    if (!animationAsset.animations.length) return;
+    if (config.moves === false) {
+      const idleAction = mixer.clipAction(animationAsset.animations[0], clonedScene);
+      idleAction.reset().setLoop(THREE.LoopRepeat, Infinity).play();
+      return () => { idleAction.stop(); mixer.stopAllAction(); };
+    }
+    const source = animationAsset.scene;
+    const sourceSkeleton = source.getObjectByProperty('type', 'Bone');
+    const targetSkeleton = clonedScene.getObjectByProperty('type', 'Bone');
+    if (!sourceSkeleton || !targetSkeleton) return;
+    const retargetedClip = SkeletonUtils.retargetClip(targetSkeleton, sourceSkeleton, animationAsset.animations[0]);
+    const action = mixer.clipAction(retargetedClip, clonedScene);
+    action.reset().setLoop(THREE.LoopRepeat, Infinity).play();
+    return () => { action.stop(); mixer.stopAllAction(); };
+  }, [animationAsset, clonedScene, config.moves, mixer]);
 
   useEffect(() => () => removeNPCCollider(config.id), [config.id]);
 
   useFrame((_, delta) => {
+    mixer.update(delta);
     if (!rootRef.current || config.moves === false) {
       updateNPCCollider(config.id, { x: config.position[0], z: config.position[2], radius: config.radius });
       return;
