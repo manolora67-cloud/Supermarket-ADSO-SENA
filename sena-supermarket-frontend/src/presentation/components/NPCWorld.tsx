@@ -52,25 +52,24 @@ const NPC_CONFIGS: NPCConfig[] = [
   { id: 'child-right-1', kind: 'child', model: NPC_MODELS.child, animationModel: NPC_MODELS.childWalk, position: [7, 0, -65], route: [[7, -65], [7, -18], [7, 42]], speed: 1.55, scale: 0.58, radius: 0.34 },
   { id: 'dog-right-1', kind: 'dog', model: NPC_MODELS.dogTwo, position: [6.3, 0, 15], route: [[6.3, 15], [6.3, -25], [6.3, -65]], speed: 1.55, scale: 0.02, radius: 0.4, modelRotationY: 0 },
   { id: 'cat-right-1', kind: 'cat', model: NPC_MODELS.catTwo, position: [6.7, 0, 30], route: [[6.7, 30], [6.7, 15], [6.7, 70]], speed: 0.85, scale: 0.04, radius: 0.25, modelRotationY: 0 },
-  { id: 'woman-crossing-1', kind: 'woman', model: NPC_MODELS.woman, animationModel: NPC_MODELS.womanWalk, position: [-7, 0, -5], route: [[-7, -5], [-7, 5], [-3.5, 5], [3.5, 5], [7, 5], [7, -45]], speed: 1.05, scale: 0.8, radius: 0.45 },
-  { id: 'child-crossing-1', kind: 'child', model: NPC_MODELS.child, animationModel: NPC_MODELS.childWalk, position: [7, 0, 22], route: [[7, 22], [7, 5], [3.5, 5], [-3.5, 5], [-7, 5], [-7, 65]], speed: 1.35, scale: 0.58, radius: 0.34 },
+  { id: 'woman-crossing-1', kind: 'woman', model: NPC_MODELS.woman, position: [-7, 0, -5], route: [[-7, -5], [-7, 5], [-3.5, 5], [3.5, 5], [7, 5], [7, -45]], speed: 1.05, scale: 0.8, radius: 0.45 },
+  { id: 'child-crossing-1', kind: 'child', model: NPC_MODELS.child, position: [7, 0, 22], route: [[7, 22], [7, 5], [3.5, 5], [-3.5, 5], [-7, 5], [-7, 65]], speed: 1.35, scale: 0.58, radius: 0.34 },
 ];
 
 function AnimatedNPC({ config }: { config: NPCConfig }) {
   const rootRef = useRef<THREE.Group>(null);
   const modelRef = useRef<THREE.Group>(null);
-  const routeIndex = useRef(1);
-  const { scene } = useGLTF(config.model);
-  const { animations } = useGLTF(config.animationModel ?? config.model);
+  const routeIndex = useRef(config.moves === false ? 0 : 1);
+  const { scene, animations } = useGLTF(config.model);
   const clonedScene = useMemo(() => SkeletonUtils.clone(scene), [scene]);
-  const { actions } = useAnimations(animations, modelRef);
+  const { actions } = useAnimations(config.moves === false ? animations : [], modelRef);
 
   useEffect(() => {
-    const walkAction = Object.values(actions)[0];
-    if (!walkAction) return;
-    walkAction.reset().fadeIn(0.2).play();
-    return () => { walkAction.fadeOut(0.2); };
-  }, [actions]);
+    if (config.moves !== false) return;
+    const idleAction = Object.values(actions)[0];
+    idleAction?.reset().fadeIn(0.2).play();
+    return () => { idleAction?.fadeOut(0.2); };
+  }, [actions, config.moves]);
 
   useEffect(() => () => removeNPCCollider(config.id), [config.id]);
 
@@ -80,6 +79,10 @@ function AnimatedNPC({ config }: { config: NPCConfig }) {
       return;
     }
     const target = config.route[routeIndex.current];
+    if (!target) {
+      routeIndex.current = 0;
+      return;
+    }
     const targetPosition = new THREE.Vector3(target[0], 0, target[1]);
     const currentPosition = rootRef.current.position;
     const direction = targetPosition.clone().sub(currentPosition);
@@ -91,6 +94,7 @@ function AnimatedNPC({ config }: { config: NPCConfig }) {
     direction.normalize();
     currentPosition.addScaledVector(direction, config.speed * delta);
     rootRef.current.rotation.y = Math.atan2(direction.x, direction.z);
+    modelRef.current?.position.set(0, Math.abs(Math.sin(performance.now() * 0.008 * config.speed)) * 0.025, 0);
     updateNPCCollider(config.id, { x: currentPosition.x, z: currentPosition.z, radius: config.radius });
   });
 
