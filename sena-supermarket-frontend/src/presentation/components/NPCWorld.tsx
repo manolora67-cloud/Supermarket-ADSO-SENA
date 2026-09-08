@@ -72,14 +72,7 @@ function AnimatedNPC({ config }: { config: NPCConfig }) {
       idleAction.reset().setLoop(THREE.LoopRepeat, Infinity).play();
       return () => { idleAction.stop(); mixer.stopAllAction(); };
     }
-    const source = animationAsset.scene;
-    const sourceSkeleton = source.getObjectByProperty('type', 'Bone');
-    const targetSkeleton = clonedScene.getObjectByProperty('type', 'Bone');
-    if (!sourceSkeleton || !targetSkeleton) return;
-    const retargetedClip = SkeletonUtils.retargetClip(targetSkeleton, sourceSkeleton, animationAsset.animations[0]);
-    const action = mixer.clipAction(retargetedClip, clonedScene);
-    action.reset().setLoop(THREE.LoopRepeat, Infinity).play();
-    return () => { action.stop(); mixer.stopAllAction(); };
+    return;
   }, [animationAsset, clonedScene, config.moves, mixer]);
 
   useEffect(() => () => removeNPCCollider(config.id), [config.id]);
