@@ -21,6 +21,7 @@ interface NPCConfig {
   radius: number;
   modelRotationY?: number;
   moves?: boolean;
+  targetHeight?: number;
 }
 
 const NPC_MODELS = {
@@ -45,13 +46,13 @@ const NPC_CONFIGS: NPCConfig[] = [
   { id: 'woman-left-1', kind: 'woman', model: NPC_MODELS.woman, position: [-7, 0, 30], route: [[-7, 30], [-7, -12], [-7, -72]], speed: 1.1, scale: 0.8, radius: 0.45 },
   { id: 'child-left-1', kind: 'child', model: NPC_MODELS.child, position: [-7, 0, 55], route: [[-7, 55], [-7, 20], [-7, -30]], speed: 1.5, scale: 0.58, radius: 0.34 },
   { id: 'nina-left-1', kind: 'child', model: NPC_MODELS.girl, position: [-7, 0, 72], route: [[-7, 72], [-7, 42], [-7, -8]], speed: 1.35, scale: 0.58, radius: 0.34 },
-  { id: 'dog-left-1', kind: 'dog', model: NPC_MODELS.dog, position: [-6.3, 0, -25], route: [[-6.3, -25], [-6.3, 35], [-6.3, 78]], speed: 1.45, scale: 0.05, radius: 0.4, modelRotationY: 0 },
-  { id: 'cat-left-1', kind: 'cat', model: NPC_MODELS.cat, position: [-6.7, 0, 35], route: [[-6.7, 35]], speed: 0, scale: 0.035, radius: 0.25, modelRotationY: 0, moves: false },
+  { id: 'dog-left-1', kind: 'dog', model: NPC_MODELS.dog, position: [-6.3, 0, 10], route: [[-6.3, 10], [-6.3, 35], [-6.3, 70]], speed: 1.45, scale: 1, radius: 0.4, modelRotationY: 0, targetHeight: 0.75 },
+  { id: 'cat-left-1', kind: 'cat', model: NPC_MODELS.cat, position: [-6.7, 0, 25], route: [[-6.7, 25]], speed: 0, scale: 1, radius: 0.25, modelRotationY: 0, moves: false, targetHeight: 0.38 },
   { id: 'man-right-1', kind: 'man', model: NPC_MODELS.man, position: [7, 0, 60], route: [[7, 60], [7, 10], [7, 76]], speed: 1.25, scale: 0.8, radius: 0.45 },
   { id: 'woman-right-1', kind: 'woman', model: NPC_MODELS.woman, position: [7, 0, -35], route: [[7, -35], [7, 18], [7, 76]], speed: 1.15, scale: 0.8, radius: 0.45 },
   { id: 'child-right-1', kind: 'child', model: NPC_MODELS.child, position: [7, 0, -65], route: [[7, -65], [7, -18], [7, 42]], speed: 1.55, scale: 0.58, radius: 0.34 },
-  { id: 'dog-right-1', kind: 'dog', model: NPC_MODELS.dogTwo, position: [6.3, 0, 18], route: [[6.3, 18], [6.3, -45], [6.3, -72]], speed: 1.55, scale: 0.045, radius: 0.4, modelRotationY: 0 },
-  { id: 'cat-right-1', kind: 'cat', model: NPC_MODELS.catTwo, position: [6.7, 0, 42], route: [[6.7, 42], [6.7, 25], [6.7, 70]], speed: 0.85, scale: 0.04, radius: 0.25, modelRotationY: 0 },
+  { id: 'dog-right-1', kind: 'dog', model: NPC_MODELS.dogTwo, position: [6.3, 0, 15], route: [[6.3, 15], [6.3, -25], [6.3, -65]], speed: 1.55, scale: 1, radius: 0.4, modelRotationY: 0, targetHeight: 0.75 },
+  { id: 'cat-right-1', kind: 'cat', model: NPC_MODELS.catTwo, position: [6.7, 0, 30], route: [[6.7, 30], [6.7, 15], [6.7, 70]], speed: 0.85, scale: 1, radius: 0.25, modelRotationY: 0, targetHeight: 0.38 },
   { id: 'woman-crossing-1', kind: 'woman', model: NPC_MODELS.woman, position: [-7, 0, -5], route: [[-7, -5], [-7, 5], [-3.5, 5], [3.5, 5], [7, 5], [7, -45]], speed: 1.05, scale: 0.8, radius: 0.45 },
   { id: 'child-crossing-1', kind: 'child', model: NPC_MODELS.child, position: [7, 0, 22], route: [[7, 22], [7, 5], [3.5, 5], [-3.5, 5], [-7, 5], [-7, 65]], speed: 1.35, scale: 0.58, radius: 0.34 },
 ];
@@ -62,6 +63,10 @@ function AnimatedNPC({ config }: { config: NPCConfig }) {
   const routeIndex = useRef(1);
   const { scene } = useGLTF(config.model);
   const clonedScene = useMemo(() => SkeletonUtils.clone(scene), [scene]);
+  const modelBounds = useMemo(() => new THREE.Box3().setFromObject(clonedScene), [clonedScene]);
+  const modelHeight = Math.max(modelBounds.max.y - modelBounds.min.y, 0.01);
+  const modelScale = config.targetHeight ? config.targetHeight / modelHeight : config.scale;
+  const floorOffset = -modelBounds.min.y * modelScale;
 
   useEffect(() => () => removeNPCCollider(config.id), [config.id]);
 
@@ -86,8 +91,8 @@ function AnimatedNPC({ config }: { config: NPCConfig }) {
   });
 
   return (
-    <group ref={rootRef} position={config.position} rotation={[0, config.rotationY ?? 0, 0]}>
-    <group ref={modelRef} rotation={[0, config.modelRotationY ?? 0, 0]} scale={[config.scale, config.scale, config.scale]}>
+    <group ref={rootRef} position={config.position} rotation={[0, 0, 0]}>
+    <group ref={modelRef} position={[0, floorOffset, 0]} rotation={[0, config.modelRotationY ?? 0, 0]} scale={[modelScale, modelScale, modelScale]}>
         <primitive object={clonedScene} castShadow />
       </group>
     </group>
