@@ -46,7 +46,7 @@ Object.values(NPC_MODELS).forEach((path) => useGLTF.preload(path));
 // Activa esto en true SOLO para diagnosticar (dibuja una caja verde alrededor
 // de cada NPC y muestra su tamaño real + nombres de sus clips en consola).
 // Déjalo en false en producción.
-const NPC_DEBUG = false;
+const NPC_DEBUG = true;
 
 // Rango en X de la calzada central (debe coincidir con la carretera de
 // SupermarketEnvironment). Un NPC que va a entrar en este rango de X primero
