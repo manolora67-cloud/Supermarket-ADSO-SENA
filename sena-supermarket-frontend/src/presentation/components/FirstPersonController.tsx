@@ -1,61 +1,78 @@
+// src/presentation/components/FirstPersonController.tsx
 import React, { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls } from '@react-three/drei';
+import { useXRInputSourceState } from '@react-three/xr';
 import * as THREE from 'three';
-import { isNearNPC } from '../../application/services/npcCollisionRegistry';
+import { supermarketFloorColliders, worldColliders } from '../utils/colliders';
+import { usePhoneStore } from '../../application/store/usePhoneStore';
 
-// Cajas de colisión AABB ajustadas a las fachadas de cristal externas
-const BUILDING_BOXES = [
-  // Supermercado SENA
-  { minX: -23, maxX: -9, minZ: -15, maxZ: 15 },
+function isPositionBlocked(position: THREE.Vector3): boolean {
+  if (position.x <= -22.5 || position.x >= 25.5) return true;
+  if (position.z <= -78 || position.z >= 88) return true;
 
-  // Tienda ADXO
-  { minX: -2.5, maxX: 5.5, minZ: 42, maxZ: 54 },
+  const playerBox = new THREE.Box3(
+    new THREE.Vector3(position.x - 0.3, position.y - 1.6, position.z - 0.3),
+    new THREE.Vector3(position.x + 0.3, position.y + 0.4, position.z + 0.3)
+  );
 
-  // ACERA IZQUIERDA (Fachadas bloqueadas en X = -8.5 para no entrar al Café)
-  { minX: -22.5, maxX: -8.5, minZ: -74, maxZ: -60 }, // Edificio 3
-  { minX: -22.5, maxX: -8.5, minZ: -52, maxZ: -38 }, // Café (tienda_3)
-  { minX: -22.5, maxX: -8.5, minZ: -38, maxZ: -28 }, // Caricaturesco
-  { minX: -22.5, maxX: -8.5, minZ: -28, maxZ: -16 }, // Edificio 3
-  { minX: -22.5, maxX: -8.5, minZ: 16, maxZ: 31 },  // Edificio 3
-  { minX: -22.5, maxX: -8.5, minZ: 31, maxZ: 43 },  // Caricaturesco
-  { minX: -22.5, maxX: -8.5, minZ: 43, maxZ: 55 },  // Edificio 3
-  { minX: -22.5, maxX: -8.5, minZ: 55, maxZ: 68 },  // Caricaturesco
-  { minX: -22.5, maxX: -6.5, minZ: 74, maxZ: 89 },  // Abandonado
-
-  // ACERA DERECHA (Fachadas bloqueadas en X = +8.5)
-  { minX: 8.5, maxX: 25.5, minZ: -67, maxZ: -53 }, // Edificio 3
-  { minX: 8.5, maxX: 25.5, minZ: -52, maxZ: -39 }, // Caricaturesco
-  { minX: 8.5, maxX: 25.5, minZ: -38, maxZ: -22 }, // Edificio 3
-  { minX: 8.5, maxX: 25.5, minZ: -21, maxZ: -8 },  // Caricaturesco
-  { minX: 8.5, maxX: 25.5, minZ: -8, maxZ: 7 },    // Edificio 3
-  { minX: 8.5, maxX: 25.5, minZ: 4, maxZ: 16 },    // Caricaturesco
-  { minX: 8.5, maxX: 25.5, minZ: 16, maxZ: 29 },   // Edificio 3
-  { minX: 8.5, maxX: 25.5, minZ: 29, maxZ: 41 },   // Caricaturesco
-  { minX: 8.5, maxX: 25.5, minZ: 41, maxZ: 55 },   // Edificio 3
-];
-
-function isPositionBlocked(x: number, z: number): boolean {
-  // Muros de límite del mapa
-  if (x <= -22.5 || x >= 25.5) return true;
-  if (z <= -78 || z >= 88) return true;
-
-  // Verificación de colisión contra edificaciones
-  for (const box of BUILDING_BOXES) {
-    if (x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ) {
+  for (const collider of worldColliders) {
+    if (supermarketFloorColliders.includes(collider)) continue;
+    // El andén y el piso sostienen al jugador, pero no deben comportarse como paredes.
+    if (collider.max.y <= 0.16) continue;
+    if (playerBox.intersectsBox(collider)) {
       return true;
     }
   }
-
   return false;
 }
 
-export const FirstPersonController: React.FC = () => {
-  const { camera } = useThree();
+// Funciones utilitarias para disparar eventos de teclado desde VR
+function fireKeyPress(code: string) {
+  window.dispatchEvent(new KeyboardEvent('keydown', { code }));
+}
+
+interface FirstPersonControllerProps {
+  xrOriginRef?: React.RefObject<THREE.Group | null>;
+}
+
+export const FirstPersonController: React.FC<FirstPersonControllerProps> = ({ xrOriginRef }) => {
+  const { camera, gl } = useThree();
   const moveState = useRef({ forward: false, backward: false, left: false, right: false });
+  const rotationRef = useRef({ yaw: 0, pitch: 0 });
+  const controlsRef = useRef<any>(null);
+  const isPhoneOpen = usePhoneStore((s) => s.isOpen);
+
+  const rightController = useXRInputSourceState('controller', 'right');
+  const leftController = useXRInputSourceState('controller', 'left');
+
+  // Referencias para evitar que los botones se disparen cientos de veces por segundo
+  const triggerWasPressed = useRef(false);
+  const menuWasPressed = useRef(false);
+  const gripWasPressed = useRef(false);
+  const buttonAWasPressed = useRef(false);
+  const buttonBWasPressed = useRef(false);
+  
+  const snapTurnCooldown = useRef(0);
 
   useEffect(() => {
+    if (isPhoneOpen && controlsRef.current) {
+      controlsRef.current.unlock();
+    }
+  }, [isPhoneOpen]);
+
+  useEffect(() => {
+    camera.position.set(6, 1.6, 5);
+    camera.rotation.set(0, Math.PI / 2, 0);
+
+    const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+    rotationRef.current.yaw = euler.y;
+    rotationRef.current.pitch = euler.x;
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      const targetTag = (e.target as HTMLElement)?.tagName;
+      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA') return;
+
       if (e.code === 'KeyW' || e.code === 'ArrowUp') moveState.current.forward = true;
       if (e.code === 'KeyS' || e.code === 'ArrowDown') moveState.current.backward = true;
       if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveState.current.left = true;
@@ -69,45 +86,129 @@ export const FirstPersonController: React.FC = () => {
       if (e.code === 'KeyD' || e.code === 'ArrowRight') moveState.current.right = false;
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('keydown', handleKeyDown, true);
+    window.addEventListener('keyup', handleKeyUp, true);
+
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('keydown', handleKeyDown, true);
+      window.removeEventListener('keyup', handleKeyUp, true);
     };
-  }, []);
+  }, [camera]);
+
+  // ===================================================
+  //  LÓGICA EXCLUSIVA DE VR
+  // ===================================================
+  function handleVRFrame(delta: number) {
+    const speed = 2.2 * delta;
+    
+    // 1. Gatillo (Interacción Principal - Tecla E)
+    const trigger = rightController?.gamepad?.['xr-standard-trigger'] ?? leftController?.gamepad?.['xr-standard-trigger'];
+    const triggerPressed = trigger?.state === 'pressed';
+    if (triggerPressed && !triggerWasPressed.current) fireKeyPress('KeyE');
+    triggerWasPressed.current = triggerPressed;
+
+    // 2. Menú (Abrir Celular)
+    const menuButton = leftController?.gamepad?.['x-button']; 
+    const menuPressed = menuButton?.state === 'pressed';
+    if (menuPressed && !menuWasPressed.current) {
+      usePhoneStore.setState((s) => ({ isOpen: !s.isOpen }));
+    }
+    menuWasPressed.current = menuPressed;
+
+    // 3. Grip (Sujetar Cajas - Asignamos tecla 'G' temporalmente para cuando conectes la lógica)
+    const grip = rightController?.gamepad?.['xr-standard-squeeze'] ?? leftController?.gamepad?.['xr-standard-squeeze'];
+    const gripPressed = grip?.state === 'pressed';
+    if (gripPressed && !gripWasPressed.current) fireKeyPress('KeyG'); // <-- Listo para tu sistema de cajas
+    gripWasPressed.current = gripPressed;
+
+    // 4. Botones A/X (Confirmar) y B/Y (Cancelar)
+    const buttonA = rightController?.gamepad?.['a-button'];
+    const buttonAPressed = buttonA?.state === 'pressed';
+    if (buttonAPressed && !buttonAWasPressed.current) fireKeyPress('Enter'); // Confirmar diálogo
+    buttonAWasPressed.current = buttonAPressed;
+
+    const buttonB = rightController?.gamepad?.['b-button'];
+    const buttonBPressed = buttonB?.state === 'pressed';
+    if (buttonBPressed && !buttonBWasPressed.current) fireKeyPress('Escape'); // Cancelar/Cerrar diálogo
+    buttonBWasPressed.current = buttonBPressed;
+
+    if (!xrOriginRef?.current) return;
+
+    // 5. Movimiento con Joystick Izquierdo
+    const leftStick = leftController?.gamepad?.['xr-standard-thumbstick'];
+    const moveX = leftStick?.xAxis ?? 0;
+    const moveZ = leftStick?.yAxis ?? 0;
+
+    if (Math.abs(moveX) > 0.15 || Math.abs(moveZ) > 0.15) {
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      forward.y = 0;
+      forward.normalize();
+
+      const side = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+
+      const direction = new THREE.Vector3();
+      direction.addScaledVector(forward, -moveZ);
+      direction.addScaledVector(side, moveX);
+      direction.clampLength(0, 1).multiplyScalar(speed);
+
+      const next = xrOriginRef.current.position.clone().add(direction);
+      if (!isPositionBlocked(new THREE.Vector3(next.x, 1.6, next.z))) {
+        xrOriginRef.current.position.copy(next);
+      }
+    }
+
+    // 6. Giro de cámara (Snap-turn) con Joystick Derecho
+    snapTurnCooldown.current -= delta;
+    const rightStick = rightController?.gamepad?.['xr-standard-thumbstick'];
+    const turnX = rightStick?.xAxis ?? 0;
+
+    if (Math.abs(turnX) > 0.6 && snapTurnCooldown.current <= 0) {
+      const snapAngle = Math.PI / 4; // 45 grados
+      xrOriginRef.current.rotation.y -= Math.sign(turnX) * snapAngle;
+      snapTurnCooldown.current = 0.35; // Cooldown de 0.35 segundos
+    }
+  }
 
   useFrame((_, delta) => {
-    const speed = 10 * delta;
-    const frontVector = new THREE.Vector3(
-      0,
-      0,
-      (moveState.current.backward ? 1 : 0) - (moveState.current.forward ? 1 : 0)
-    );
-    const sideVector = new THREE.Vector3(
-      (moveState.current.left ? 1 : 0) - (moveState.current.right ? 1 : 0),
-      0,
-      0
-    );
-
-    const direction = new THREE.Vector3()
-      .subVectors(frontVector, sideVector)
-      .normalize()
-      .multiplyScalar(speed)
-      .applyEuler(camera.rotation);
-
-    const nextX = camera.position.x + direction.x;
-    const nextZ = camera.position.z + direction.z;
-
-    if (!isPositionBlocked(nextX, camera.position.z) && !isNearNPC(nextX, camera.position.z)) {
-      camera.position.x = nextX;
+    if (gl.xr.isPresenting) {
+      handleVRFrame(delta);
+      return;
     }
-    if (!isPositionBlocked(camera.position.x, nextZ) && !isNearNPC(camera.position.x, nextZ)) {
-      camera.position.z = nextZ;
+
+    // LÓGICA DE ESCRITORIO
+    const speed = 10 * delta;
+    const moveForward = (moveState.current.forward ? 1 : 0) - (moveState.current.backward ? 1 : 0);
+    const moveSide = (moveState.current.right ? 1 : 0) - (moveState.current.left ? 1 : 0);
+
+    const cameraDirection = new THREE.Vector3();
+    camera.getWorldDirection(cameraDirection);
+    cameraDirection.y = 0;
+    cameraDirection.normalize();
+
+    const cameraSide = new THREE.Vector3();
+    cameraSide.crossVectors(cameraDirection, camera.up).normalize();
+
+    const direction = new THREE.Vector3();
+    direction.addScaledVector(cameraDirection, moveForward);
+    direction.addScaledVector(cameraSide, moveSide);
+
+    direction.clampLength(0, 1).multiplyScalar(speed);
+
+    const nextPos = camera.position.clone();
+    nextPos.x += direction.x;
+    if (!isPositionBlocked(nextPos)) {
+      camera.position.x = nextPos.x;
+    }
+
+    const nextPosZ = camera.position.clone();
+    nextPosZ.z += direction.z;
+    if (!isPositionBlocked(nextPosZ)) {
+      camera.position.z = nextPosZ.z;
     }
 
     camera.position.y = 1.6;
   });
 
-  return <PointerLockControls />;
+  return <PointerLockControls ref={controlsRef} />;
 };

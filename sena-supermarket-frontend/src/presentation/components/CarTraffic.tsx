@@ -1,14 +1,15 @@
-import React, { useRef, useMemo, useEffect, Suspense } from 'react';
+// src/presentation/components/CarTraffic.tsx
+import React, { useRef, useMemo, Suspense } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { CarModel } from './CarModel';
-import { updateCarCollider, removeCarCollider } from '../../application/services/carTrafficRegistry';
+import { MODELOS_3D } from '../../application/data/modelosUrls';
 
 const CAR_MODELS = {
-  carro1: '/models/2021_carro1.glb',
-  carro2: '/models/2023_carro2.glb',
-  carro3: '/models/2025_carro3.glb',
+  carro1: MODELOS_3D.carro2021,
+  carro2: MODELOS_3D.carro2023,
+  carro3: MODELOS_3D.carro2025,
 };
 
 Object.values(CAR_MODELS).forEach((path) => useGLTF.preload(path));
@@ -26,10 +27,6 @@ interface MovingVehicleProps extends VehicleData {
   allVehiclesRef: React.MutableRefObject<Map<number, THREE.Group>>;
   onPlayerHit?: (damage: number) => void;
 }
-
-// Radio aproximado del carro usado para el registro de tráfico que consultan
-// los NPCs al cruzar (no afecta la física entre carros, solo esa consulta).
-const CAR_COLLIDER_RADIUS = 2.2;
 
 function MovingVehicle({
   id,
@@ -54,12 +51,6 @@ function MovingVehicle({
       allVehiclesRef.current.delete(id);
     }
   };
-
-  // Si el componente se desmonta, saca este carro del registro compartido
-  // para que ningún NPC siga "viéndolo" ahí parado.
-  useEffect(() => {
-    return () => removeCarCollider(String(id));
-  }, [id]);
 
   useFrame((state, delta) => {
     if (!ref.current) return;
@@ -101,12 +92,6 @@ function MovingVehicle({
       ref.current.position.z -= 150;
     }
 
-    // Publica la posición actual de este carro en el registro compartido,
-    // para que los NPCs que cruzan la calle (NPCWorld) puedan consultar si
-    // es seguro pasar.
-    updateCarCollider(String(id), { x: laneX, z: ref.current.position.z, radius: CAR_COLLIDER_RADIUS });
-
-    // --- DETECCIÓN DE IMPACTO Y EMPUJÓN FÍSICO AL JUGADOR ---
     const dx = camera.position.x - ref.current.position.x;
     const dz = camera.position.z - ref.current.position.z;
     const distance = Math.sqrt(dx * dx + dz * dz);
@@ -115,8 +100,6 @@ function MovingVehicle({
       const now = state.clock.getElapsedTime();
       if (now - lastHitTime.current > 0.8) {
         lastHitTime.current = now;
-
-        // Empuja la cámara directamente hacia la acera más cercana fuera de la carretera
         const pushSide = camera.position.x >= 0 ? 4.5 : -4.5;
         camera.position.x = pushSide;
 
