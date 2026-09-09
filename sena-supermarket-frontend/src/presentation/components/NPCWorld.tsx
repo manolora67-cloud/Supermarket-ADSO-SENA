@@ -40,6 +40,20 @@ const NPC_MODELS = {
 
 Object.values(NPC_MODELS).forEach((path) => useGLTF.preload(path));
 
+// Activa esto en true SOLO para diagnosticar (dibuja una caja verde alrededor
+// de cada NPC y muestra su tamaño real en consola). Déjalo en false en producción.
+const NPC_DEBUG = false;
+
+// Los modelos de personas suelen tener el origen (0,0,0) un poco por encima
+// de los pies, lo que hace que se vean "hundidos". Este offset los levanta.
+const KIND_Y_OFFSET: Record<NPCKind, number> = {
+  man: 0.05,
+  woman: 0.05,
+  child: 0.04,
+  dog: 0,
+  cat: 0,
+};
+
 const NPC_CONFIGS: NPCConfig[] = [
   { id: 'man-left-1', kind: 'man', model: NPC_MODELS.man, animationModel: NPC_MODELS.manWalk, position: [-7, 0, -60], route: [[-7, -60], [-7, -10], [-7, -72]], speed: 1.35, scale: 0.8, radius: 0.45 },
   { id: 'woman-left-1', kind: 'woman', model: NPC_MODELS.woman, animationModel: NPC_MODELS.womanWalk, position: [-7, 0, 30], route: [[-7, 30], [-7, -12], [-7, -72]], speed: 1.1, scale: 0.8, radius: 0.45 },
@@ -65,10 +79,21 @@ function AnimatedNPC({ config }: { config: NPCConfig }) {
   const clonedScene = useMemo(() => SkeletonUtils.clone(scene), [scene]);
   const mixer = useMemo(() => new THREE.AnimationMixer(clonedScene), [clonedScene]);
 
+  const initialPosition: [number, number, number] = [
+    config.position[0],
+    config.position[1] + (KIND_Y_OFFSET[config.kind] ?? 0),
+    config.position[2],
+  ];
+
   useEffect(() => {
     if (!animationAsset.animations.length) return;
     if (config.moves === false) {
-      const idleAction = mixer.clipAction(animationAsset.animations[0], clonedScene);
+      // Busca explícitamente el clip de "lamerse" (idle) por nombre; si no
+      // existe con ese nombre, cae al primer clip disponible.
+      const idleClip =
+        animationAsset.animations.find((clip) => /lam|lick|idle|quiet/i.test(clip.name)) ??
+        animationAsset.animations[0];
+      const idleAction = mixer.clipAction(idleClip, clonedScene);
       idleAction.reset().setLoop(THREE.LoopRepeat, Infinity).play();
       return () => { idleAction.stop(); mixer.stopAllAction(); };
     }
@@ -76,6 +101,17 @@ function AnimatedNPC({ config }: { config: NPCConfig }) {
   }, [animationAsset, clonedScene, config.moves, mixer]);
 
   useEffect(() => () => removeNPCCollider(config.id), [config.id]);
+
+  // Diagnóstico: muestra el tamaño real del modelo cargado y le pone una
+  // caja verde alrededor para verificar visualmente su posición/escala.
+  useEffect(() => {
+    if (!NPC_DEBUG) return;
+    const box = new THREE.Box3().setFromObject(clonedScene);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    // eslint-disable-next-line no-console
+    console.log(`[NPC_DEBUG] ${config.id} (${config.kind}) tamaño real tras escala:`, size);
+  }, [clonedScene, config.id, config.kind]);
 
   useFrame((_, delta) => {
     mixer.update(delta);
@@ -104,9 +140,10 @@ function AnimatedNPC({ config }: { config: NPCConfig }) {
   });
 
   return (
-    <group ref={rootRef} position={config.position} rotation={[0, 0, 0]}>
-    <group ref={modelRef} rotation={[0, config.modelRotationY ?? 0, 0]} scale={[config.scale, config.scale, config.scale]}>
+    <group ref={rootRef} position={initialPosition} rotation={[0, 0, 0]}>
+      <group ref={modelRef} rotation={[0, config.modelRotationY ?? 0, 0]} scale={[config.scale, config.scale, config.scale]}>
         <primitive object={clonedScene} castShadow />
+        {NPC_DEBUG && <primitive object={new THREE.BoxHelper(clonedScene, 0x00ff00)} />}
       </group>
     </group>
   );
