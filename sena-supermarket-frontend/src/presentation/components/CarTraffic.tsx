@@ -1,8 +1,9 @@
-import React, { useRef, useMemo, Suspense } from 'react';
+import React, { useRef, useMemo, useEffect, Suspense } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { CarModel } from './CarModel';
+import { updateCarCollider, removeCarCollider } from '../../application/services/carTrafficRegistry';
 
 const CAR_MODELS = {
   carro1: '/models/2021_carro1.glb',
@@ -25,6 +26,10 @@ interface MovingVehicleProps extends VehicleData {
   allVehiclesRef: React.MutableRefObject<Map<number, THREE.Group>>;
   onPlayerHit?: (damage: number) => void;
 }
+
+// Radio aproximado del carro usado para el registro de tráfico que consultan
+// los NPCs al cruzar (no afecta la física entre carros, solo esa consulta).
+const CAR_COLLIDER_RADIUS = 2.2;
 
 function MovingVehicle({
   id,
@@ -49,6 +54,12 @@ function MovingVehicle({
       allVehiclesRef.current.delete(id);
     }
   };
+
+  // Si el componente se desmonta, saca este carro del registro compartido
+  // para que ningún NPC siga "viéndolo" ahí parado.
+  useEffect(() => {
+    return () => removeCarCollider(String(id));
+  }, [id]);
 
   useFrame((state, delta) => {
     if (!ref.current) return;
@@ -89,6 +100,11 @@ function MovingVehicle({
     } else if (direction === 1 && ref.current.position.z > 80) {
       ref.current.position.z -= 150;
     }
+
+    // Publica la posición actual de este carro en el registro compartido,
+    // para que los NPCs que cruzan la calle (NPCWorld) puedan consultar si
+    // es seguro pasar.
+    updateCarCollider(String(id), { x: laneX, z: ref.current.position.z, radius: CAR_COLLIDER_RADIUS });
 
     // --- DETECCIÓN DE IMPACTO Y EMPUJÓN FÍSICO AL JUGADOR ---
     const dx = camera.position.x - ref.current.position.x;
