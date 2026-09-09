@@ -85,25 +85,43 @@ function AnimatedNPC({ config }: { config: NPCConfig }) {
     config.position[2],
   ];
 
+  // Selecciona y reproduce el clip correcto según el NPC:
+  // - NPCs estáticos (moves === false): busca un clip de idle/lamerse.
+  // - NPCs que se desplazan: busca un clip de caminar/correr.
+  // En ambos casos, si no encuentra un nombre que coincida, usa el primer
+  // clip disponible como respaldo para no dejar al NPC sin animación.
   useEffect(() => {
     if (!animationAsset.animations.length) return;
+
+    let clip: THREE.AnimationClip | undefined;
+
     if (config.moves === false) {
-      // Busca explícitamente el clip de "lamerse" (idle) por nombre; si no
-      // existe con ese nombre, cae al primer clip disponible.
-      const idleClip =
-        animationAsset.animations.find((clip) => /lam|lick|idle|quiet/i.test(clip.name)) ??
+      clip =
+        animationAsset.animations.find((c) => /lam|lick|idle|quiet/i.test(c.name)) ??
         animationAsset.animations[0];
-      const idleAction = mixer.clipAction(idleClip, clonedScene);
-      idleAction.reset().setLoop(THREE.LoopRepeat, Infinity).play();
-      return () => { idleAction.stop(); mixer.stopAllAction(); };
+    } else {
+      clip =
+        animationAsset.animations.find((c) => /walk|caminar|run|correr|andar/i.test(c.name)) ??
+        animationAsset.animations[0];
     }
-    return;
+
+    if (!clip) return;
+
+    const action = mixer.clipAction(clip, clonedScene);
+    action.reset().setLoop(THREE.LoopRepeat, Infinity).play();
+
+    return () => {
+      action.stop();
+      mixer.stopAllAction();
+    };
   }, [animationAsset, clonedScene, config.moves, mixer]);
 
   useEffect(() => () => removeNPCCollider(config.id), [config.id]);
 
   // Diagnóstico: muestra el tamaño real del modelo cargado y le pone una
   // caja verde alrededor para verificar visualmente su posición/escala.
+  // También avisa en consola si un modelo no trae ningún clip de animación,
+  // útil para detectar NPCs que "no aparecen" o quedan en bind pose.
   useEffect(() => {
     if (!NPC_DEBUG) return;
     const box = new THREE.Box3().setFromObject(clonedScene);
@@ -111,7 +129,11 @@ function AnimatedNPC({ config }: { config: NPCConfig }) {
     box.getSize(size);
     // eslint-disable-next-line no-console
     console.log(`[NPC_DEBUG] ${config.id} (${config.kind}) tamaño real tras escala:`, size);
-  }, [clonedScene, config.id, config.kind]);
+    if (!animationAsset.animations.length) {
+      // eslint-disable-next-line no-console
+      console.warn(`[NPC_DEBUG] ${config.id}: el modelo/animationModel no trae clips de animación.`);
+    }
+  }, [clonedScene, config.id, config.kind, animationAsset]);
 
   useFrame((_, delta) => {
     mixer.update(delta);
@@ -135,7 +157,6 @@ function AnimatedNPC({ config }: { config: NPCConfig }) {
     direction.normalize();
     currentPosition.addScaledVector(direction, config.speed * delta);
     rootRef.current.rotation.y = Math.atan2(direction.x, direction.z);
-    modelRef.current?.position.set(0, Math.abs(Math.sin(performance.now() * 0.008 * config.speed)) * 0.025, 0);
     updateNPCCollider(config.id, { x: currentPosition.x, z: currentPosition.z, radius: config.radius });
   });
 
